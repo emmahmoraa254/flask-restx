@@ -2,8 +2,8 @@ import os
 from datetime import datetime
 from distutils.log import debug
 
-from flask import Flask, jsonify
-from flask_restx import Api, Resource
+from flask import Flask, jsonify, request
+from flask_restx import Api, Resource, fields
 from flask_sqlalchemy import SQLAlchemy
 
 basedir = os.path.dirname(os.path.realpath(__file__))
@@ -17,7 +17,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = True
 
 # creating an api instance
-api = Api(app)
+api = Api(app, doc='/', title="A book API",
+          description="A simple REST API for books")
 
 # creating sqlalchemy instance
 db = SQLAlchemy(app)
@@ -33,25 +34,84 @@ class Book(db.Model):
         return self.title
 
 
+book_model = api.model(
+    "Book",
+    {
+        'id': fields.Integer(),
+        'title': fields.String(),
+        'author': fields.String(),
+        'date_joined': fields.String(),
+    }
+)
+
+
 @api.route('/books')
 class Books(Resource):
+    # using a cerealizer
+    @api.marshal_list_with(book_model, code=200, envelope="books")
     def get(self):
-        return jsonify({"message": "Hello World"})
+        '''
+        Get all books
+        '''
 
+        books = Book.query.all()
+        return books
+
+    @api.marshal_with(book_model, code=201, envelope="book")
     def post(self):
-        pass
+        '''Create a new book'''
+        data = request.get_json()
+
+        title = data.get('title')
+        author = data.get('author')
+
+        new_book = Book(title=title, author=author)
+
+        db.session.add(new_book)
+
+        # saving the book
+        db.session.commit()
+
+        return new_book
 
 
 @api.route('/book/<int:id>')
 class BookResource(Resource):
+
+    @api.marshal_with(book_model, code=200, envelope="book")
     def get(self, id):
-        pass
+        '''Get a book by id'''
 
+        book = Book.query.get_or_404(id)
+
+        return book, 200
+
+    @api.marshal_with(book_model, envelope="book", code=200)
     def put(self, id):
-        pass
+        '''Update a book'''
 
+        book_to_update = Book.query.get_or_404(id)
+
+        data = request.get_json()
+
+        book_to_update.title = data.get('title')
+        book_to_update.author = data.get('author')
+
+        db.session.commit()
+
+        return book_to_update, 200
+
+    @api.marshal_with(book_model, envelope="book deleted", code=200)
     def delete(self, id):
-        pass
+        '''Delete a book'''
+
+        book_to_delete = Book.query.get_or_404(id)
+
+        db.session.delete(book_to_delete)
+
+        db.session.commit()
+
+        return book_to_delete, 200
 
 # expose our models in the terminal
 
@@ -65,4 +125,4 @@ def make_shell_context():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(port=5500, debug=True)
